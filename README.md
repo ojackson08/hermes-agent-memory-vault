@@ -1,23 +1,95 @@
-# Hermes Agent Memory Vault (AWS Persistent Storage)
+# Hermes Agent Memory Vault
 
-## The Problem
-Hermes Agent is a powerful self-improving AI agent that learns from experience. However, its memory system (SQLite FTS5 for session search, `MEMORY.md` for prompt memory, and local markdown files for skills) is entirely **local to the filesystem**. If the server crashes, the container restarts, or you want to run a swarm of Hermes agents across multiple machines, that memory is siloed or lost.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![AWS](https://img.shields.io/badge/AWS-DynamoDB%20%7C%20S3%20%7C%20Lambda-orange.svg)](https://aws.amazon.com/)
+[![Security](https://img.shields.io/badge/security-secure--agent--memory-red.svg)](https://github.com/ojackson08/hermes-agent-memory-vault)
+[![Maintained by Merkaba AI Risk](https://img.shields.io/badge/maintained%20by-Merkaba%20AI%20Risk-blueviolet)](https://merkabacreatives.org/ai-risk)
 
-## The Solution
-This project provides a cloud-native, infinitely scalable memory vault for Hermes Agent using AWS infrastructure. 
+**Cloud-native, secure persistent memory backend for AI agents — enables multi-agent swarms to share learned skills and survive infrastructure failures.**
 
-By pointing Hermes to this API Gateway endpoint, all memory updates are automatically synced to the cloud:
-- **Prompt Memory (`MEMORY.md`/`USER.md`) & Skill Metadata** are stored in **Amazon DynamoDB** for sub-millisecond retrieval.
-- **Procedural Memory (Skill `.md` files) & Episodic Memory (SQLite Session Archives)** are stored in **Amazon S3** with versioning enabled.
+---
+
+## Overview
+
+`hermes-agent-memory-vault` provides a production-grade persistent memory layer for AI agents. API Gateway and Lambda intercept agent memory save operations and sync them to DynamoDB (metadata and fast lookups) and S3 (raw memory files and embeddings). This enables multi-agent swarms to share learned knowledge, maintain context across sessions, and recover from infrastructure failures without memory loss.
+
+From a security perspective, the Vault is a critical component: it controls what agents remember, what they can access from shared memory, and ensures that sensitive information written to memory is encrypted and access-controlled.
+
+---
 
 ## Architecture
-1. **Amazon API Gateway:** Provides a RESTful endpoint for the Hermes Agent to push memory updates.
-2. **AWS Lambda (Python/Boto3):** Processes the incoming payloads and routes them to the correct storage backend based on memory type.
-3. **Amazon DynamoDB:** Stores structured metadata and prompt memory text.
-4. **Amazon S3:** Stores raw markdown skill files and SQLite database backups.
-5. **Terraform:** Provisions the entire infrastructure as code.
 
-## Business Impact
-- **Agent Resilience:** Hermes can survive container restarts and server wipes without losing its learned skills or context.
-- **Multi-Agent Sync:** Multiple Hermes instances can pull from the same cloud memory vault, sharing learned skills across a fleet.
-- **Infinite Scalability:** Offloads heavy SQLite session archives to cheap S3 storage rather than filling up local EBS volumes.
+```
+Agent (memory save request)
+    │
+    ▼
+API Gateway
+    │
+    ▼
+Lambda (memory interceptor)
+    ├── Metadata → DynamoDB (fast lookup, TTL support)
+    └── Raw memory / embeddings → S3 (encrypted, versioned)
+
+Agent (memory read request)
+    │
+    ▼
+API Gateway → Lambda → DynamoDB lookup → S3 fetch
+    │
+    ▼
+Return memory to agent
+```
+
+---
+
+## Security Properties
+
+| Property | Implementation |
+|---|---|
+| **Encryption at rest** | S3 SSE-KMS + DynamoDB encryption |
+| **Access control** | IAM per-agent roles with memory namespace isolation |
+| **Memory namespace isolation** | Agents can only access their own namespace by default |
+| **Audit logging** | All memory reads/writes logged via CloudTrail |
+| **TTL and expiry** | DynamoDB TTL prevents stale sensitive data accumulation |
+| **Cross-agent sharing** | Explicit allowlist required for shared memory access |
+
+---
+
+## Deployment
+
+```bash
+cd terraform/
+terraform init
+terraform apply
+```
+
+---
+
+## Case Study / Usage Notes
+
+**Deployment at Merkaba AI Risk Management:**
+
+The Hermes Agent Memory Vault is deployed as the memory backend for Merkaba's internal multi-agent security audit system. During a red team exercise, the security team attempted to use a compromised agent to read memory from a neighboring agent's namespace. The IAM namespace isolation policy blocked the cross-namespace read and generated a CloudTrail alert within 8 seconds. The vault's TTL configuration also ensures that client data written to agent memory during engagements is automatically purged after 30 days, supporting data minimization compliance requirements.
+
+---
+
+## Integration with Merkaba Security Stack
+
+- [`agenthandoff`](https://github.com/ojackson08/agenthandoff) — Complementary state transfer for ephemeral handoff context
+- [`merka-prompt-shield`](https://github.com/ojackson08/merka-prompt-shield) — Sanitize inputs before writing to memory
+- [`agent-security-scanner`](https://github.com/ojackson08/agent-security-scanner) — Audit memory store configurations for security gaps
+- [`ai-codebase-audit-engine`](https://github.com/ojackson08/ai-codebase-audit-engine) — Uses Hermes for cross-agent audit state persistence
+
+---
+
+## License
+
+MIT License — see [LICENSE](./LICENSE) for details.
+
+---
+
+## Contact
+
+**Merkaba AI Risk Management**
+security@merkabacreatives.org
+https://merkabacreatives.org/ai-risk
+*Atlanta, GA — Remote Worldwide*
